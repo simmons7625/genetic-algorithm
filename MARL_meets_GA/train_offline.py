@@ -21,7 +21,7 @@ train_config = {
     'eps_start': 1,
     'eps_end': 0.05,
     'eps_decay': 5000,
-    'vision': 1,
+    'vision_range': 1,
     'grid_size':10, # 10 * 10
     'num_items': 2,
     'num_agents':10,
@@ -51,8 +51,8 @@ def initialize_result_directory():
 def save_model(mixer, agents, result_dir, step):
     model_path = os.path.join(result_dir, f'model/episode_{step}_')
     mixer.save_network(model_path)
-    for i, predator in enumerate(agents):
-        predator.save_network(path=model_path + f'{i}_')
+    for i, agent in enumerate(agents):
+        agent.save_network(path=model_path + f'{i}_')
 
 def log_results(log_path, metrics, values):
     with open(log_path, 'a') as f:
@@ -64,7 +64,7 @@ def log_results(log_path, metrics, values):
 def select_actions(agents, obs, eps):
     actions = []
     for i in range(len(agents)):
-        action = agents[i].select_action(obs, eps, i)
+        action = agents[i].action(obs, eps, i)
         actions.append(action)
     return actions
 
@@ -82,25 +82,23 @@ def _train(train_config, device):
     
     save_interval = train_config['save_interval']
     batch_size = train_config['batch_size']
-    num_predators = train_config['num_agents']
-    vision = train_config['vision']
+    num_agents = train_config['num_agents']
+    vision_range = train_config['vision_range']
     
     mixer = Mixer(device=device, gamma=train_config['gamma'], lr=train_config['mixer_lr'], gru=False)
-    agents = [Agent(agent_id=i, grid_size=8, vision_range=vision, lr=train_config['q_lr'], gamma=train_config['gamma'], device=device) for i in range(num_predators)]
-    
+    agents = [Agent(agent_id=i, grid_size=train_config['grid_size'], vision_range=vision_range, lr=train_config['q_lr'], gamma=train_config['gamma'], device=device) for i in range(num_agents)]
     if train_config['load_model']:
         model_path = train_config['model_path']
         mixer.load_network(model_path)
-        for i in range(len(agents)):
+        for i in range(num_agents):
             agents[i].load_network(model_path + f'{i}_')
     
     step = 0
     for ep in tqdm(range(1, train_config['num_episodes'] + 1), desc="Training Episodes"):
         env = CooperativeCollectionEnv(
             grid_size=train_config['grid_size'], 
-            num_agents=train_config['num_agents'],
+            agents=agents,
             num_items=train_config['num_items'],
-            vision_range=train_config['vision_range'],
             num_obstacles=train_config['num_obstacles']
         )
         observations = env.reset()
@@ -114,16 +112,16 @@ def _train(train_config, device):
                 eps = max(train_config['eps_end'], train_config['eps_start'] * (1 - step / train_config['eps_decay']))
             
             actions = select_actions(agents=agents, obs=observations, eps=eps)
-            next_observations, rewards, _, _, _ = env.step(actions)
-            reward = sum(rewards.values())  # 報酬を合計
+            next_observations, rewards, _ = env.step(actions)
+            reward = rewards.sum()  # 報酬を合計
             
             replay_buffer.push(observations, actions, reward, next_observations)
             
-            if step >= train_config['exploration_steps'] and len(replay_buffer) >= batch_size:
-                batch = replay_buffer.sample(batch_size)
+            if step >= train_config['exploration_steps'] and len(replay_buffer.buffer) >= batch_size:
+                obs, act, rwd, next_obs = replay_buffer.sample(batch_size)
                 td_errors = []
-                for obs, act, rwd, next_obs in batch:
-                    td_error = mixer.compute_td_error(rwd, obs, next_obs, act, agents)
+                for i in range(batch_size):
+                    td_error = mixer.compute_td_error(rwd[i], obs[i], next_obs[i], act[i], agents)
                     td_errors.append(td_error)
                 loss = mixer.train(td_errors)
                 losses.append(loss.detach().item())
@@ -134,8 +132,8 @@ def _train(train_config, device):
             # パラメータの更新
             if step % train_config['update_interval'] == 0:
                 mixer.update_target(tau=train_config['update_tau'])
-                for predator in agents:
-                    predator.update_target(tau=train_config['update_tau'])
+                for agent in agents:
+                    agent.update_target(tau=train_config['update_tau'])
 
             # モデルの保存
             if step % save_interval == 0:
@@ -144,8 +142,10 @@ def _train(train_config, device):
             log_results(step_log_path, ['reward', 'loss'], [reward, losses[-1] if losses else 'nan'])
             
             step += 1 
-        
-        env.close()
+            
+            if env.done:
+                break
+            
         log_results(ep_log_path, ['reward', 'loss'], [score, sum(losses) / len(losses) if losses else 'nan'])
         print(f"Episode {ep} - Score: {score}, Loss: {sum(losses) / len(losses) if losses else 'nan'}")
         

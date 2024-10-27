@@ -4,18 +4,15 @@ import random
 from agent import Agent
 
 class CooperativeCollectionEnv:
-    def __init__(self, grid_size=8, num_agents=2, num_items=5, vision_range=1, num_obstacles=2):
+    def __init__(self, agents, grid_size=8, num_items=5, num_obstacles=2):
         self.grid_size = grid_size
-        self.num_agents = num_agents
         self.num_items = num_items
-        self.vision_range = vision_range
-        self.agents = [Agent(agent_id=i, grid_size=grid_size, vision_range=vision_range) for i in range(num_agents)]
+        self.agents = agents
         self.items = []
         self.num_obstacles = num_obstacles  # タプルで直接指定した障害物の座標
-        self.reset()
 
     def reset(self):
-        self.obstacles = self._set_obstacles()
+        self._set_obstacles()
         for agent in self.agents:
             agent.reset_position()
         self.items = [self._random_position() for _ in range(self.num_items)]
@@ -34,7 +31,7 @@ class CooperativeCollectionEnv:
         return position
 
     def step(self, actions):
-        rewards = np.full(self.num_agents, -1)
+        rewards = np.full(len(self.agents), -1)
         
         # 各エージェントの行動（0: 上, 1: 下, 2: 左, 3: 右）を実行
         for i, action in enumerate(actions):
@@ -43,7 +40,7 @@ class CooperativeCollectionEnv:
             # アイテムの収集をチェック
             for item in self.items:
                 if self.agents[i].position == item:
-                    rewards[i] += 10
+                    rewards[i] = 10
                     self.items.remove(item)  # 収集されたアイテムを削除
                     break  # 1回の行動で1つのアイテムしか収集しない
 
