@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.special import softmax
 
 class GeneticAlgorithm:
     def __init__(self, pop_size, gene_length, gene_elements, fitness_func, mutation_rate=0.01, crossover_rate=0.7, generations=100):
@@ -21,20 +22,16 @@ class GeneticAlgorithm:
         self.population = self.initialize_population()
         
     def initialize_population(self):
-        # 個体集団の初期化（ランダムにgene_elementsから選択）
+        # 人口は偶数
+        if self.pop_size % 2 != 0:
+            raise ValueError("Selection probabilities and population size must be equal.")
+        
         return np.random.choice(self.gene_elements, size=(self.pop_size, self.gene_length))
     
     def calculate_fitness(self):
         # 適応度を計算する
         fitness_values = np.array([self.fitness_func(ind) for ind in self.population])
         return fitness_values
-    
-    def select_parents(self, fitness_values):
-        # 適応度に基づき親個体を選択する（ルーレット選択）
-        total_fitness = np.sum(fitness_values)
-        selection_probs = fitness_values / total_fitness
-        parents_indices = np.random.choice(np.arange(self.pop_size), size=self.pop_size, p=selection_probs)
-        return self.population[parents_indices]
     
     def crossover(self, parents):
         # 交叉を行い、新しい子孫を生成する
@@ -60,3 +57,10 @@ class GeneticAlgorithm:
                     # gene_elementsのいずれかの要素で置換
                     individual[gene] = np.random.choice(self.gene_elements)
         return offspring
+
+    def select_parents(self, fitness_values):
+        # ソフトマックス関数で確率を計算
+        selection_probs = softmax(fitness_values)
+        # 親のインデックスを選択し、親集団を返す
+        parents_indices = np.random.choice(np.arange(self.pop_size), size=self.pop_size, p=selection_probs)
+        return self.population[parents_indices]
