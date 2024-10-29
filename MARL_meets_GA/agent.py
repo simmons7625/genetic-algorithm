@@ -60,27 +60,31 @@ class Agent:
         observation = np.delete(observation, center * view_size + center, axis=0).flatten()  # 中心位置を削除
         position = np.array([self.position[0], self.position[1]])
         observation = np.concatenate([position, observation], axis=-1)
-        return observation
+        return torch.tensor(observation, device=self.device, dtype=torch.float)
 
     def move(self, action, obstacles):
         # 次の位置を計算
         next_position = self.position.copy()
         if action == 0:  # 上
-            next_position[1] = max(0, self.position[1] - 1)
+            next_position[1] -= 1
         elif action == 1:  # 下
-            next_position[1] = min(self.grid_size - 1, self.position[1] + 1)
+            next_position[1] += 1
         elif action == 2:  # 左
-            next_position[0] = max(0, self.position[0] - 1)
+            next_position[0] -= 1
         elif action == 3:  # 右
-            next_position[0] = min(self.grid_size - 1, self.position[0] + 1)
+            next_position[0] += 1
 
-        # 障害物がある場合、その場にとどまる
-        if tuple(next_position) not in obstacles:
+        # 次の位置がグリッド内であり、かつ障害物がない場合にのみ移動
+        if (
+            0 <= next_position[0] < self.grid_size and
+            0 <= next_position[1] < self.grid_size and
+            tuple(next_position) not in obstacles
+        ):
             self.position = next_position
     
     def action(self, observations, eps, id):
         if random.random() < eps:
-                action = random.randint(0, 4)
+                action = random.randint(0, 3)
         else:
             action_values = self.model(observations, id)
             action = action_values.argmax().item()
@@ -106,26 +110,26 @@ class Mixer:
         self.gru = gru
     
     def compute_td_error(
-        self, reward, node_features, next_node_features, actions, learners):
+        self, reward, features, next_features, actions, learners):
         
         """ TD 誤差の計算 """
         action_values = []
         for i in range(len(learners)):
-            action_value = learners[i].model(node_features, i)
+            action_value = learners[i].model(features, i)
             action_values.append(action_value)
         
         # 現在のQ値を計算
         current_q = self.mixer(
-            node_features, actions, action_values, len(learners), target=False)
+            features, actions, action_values, len(learners), target=False)
         
         next_action_values = []
         for i in range(len(learners)):
-            next_action_value = learners[i].model(node_features, i)
+            next_action_value = learners[i].model(features, i)
             next_action_values.append(next_action_value)
         
         # 次のQ値を計算
         next_q = self.target_mixer(
-            next_node_features, actions, next_action_values, len(learners), target=True)
+            next_features, actions, next_action_values, len(learners), target=True)
         
         # TD誤差を計算
         target_q = reward + self.gamma * next_q.detach()

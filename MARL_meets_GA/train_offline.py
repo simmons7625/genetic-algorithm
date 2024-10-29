@@ -10,26 +10,26 @@ from ExperienceReplay import ExperienceReplay
 
 # 学習パラメータ
 train_config = {
-    'num_episodes': 5000,
-    'save_interval': 500,
-    'update_interval': 100,
+    'num_episodes': 1000,
+    'save_interval': 10000,
+    'update_interval': 10,
     'update_tau': 0.01,
-    'max_cycles': 100,
+    'max_cycles': 10,
     'gamma': 0.99,
     'mixer_lr': 1e-4,
     'q_lr': 1e-4,
-    'eps_start': 1,
-    'eps_end': 0.05,
-    'eps_decay': 5000,
+    'eps_start': 0.2,
+    'eps_end': 0.2,
+    'eps_decay': 1,
     'vision_range': 1,
-    'grid_size':10, # 10 * 10
-    'num_items': 2,
+    'grid_size':15, # 10 * 10
+    'num_items': 10,
     'num_agents':10,
-    'num_obstacles': 3,
+    'num_obstacles': 50,
     'item_reward': 10,
     'load_model': False,
     'replay_buffer_capacity': 50000,
-    'exploration_steps': 2000,
+    'exploration_steps': 10000,
     'batch_size': 32
 }
 
@@ -112,6 +112,7 @@ def _train(train_config, device):
                 eps = max(train_config['eps_end'], train_config['eps_start'] * (1 - step / train_config['eps_decay']))
             
             actions = select_actions(agents=agents, obs=observations, eps=eps)
+            env.render()
             next_observations, rewards, _ = env.step(actions)
             reward = rewards.sum()  # 報酬を合計
             
@@ -123,7 +124,7 @@ def _train(train_config, device):
                 for i in range(batch_size):
                     td_error = mixer.compute_td_error(rwd[i], obs[i], next_obs[i], act[i], agents)
                     td_errors.append(td_error)
-                loss = mixer.train(td_errors)
+                loss = mixer.train(td_errors, agents)
                 losses.append(loss.detach().item())
                 
             score += reward

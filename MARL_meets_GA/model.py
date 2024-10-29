@@ -51,7 +51,7 @@ class QMIX(nn.Module):
         super(QMIX, self).__init__()
         # Linear layers managed by Sequential
         self.fcin = nn.Sequential(
-            nn.Linear(16, 32),
+            nn.Linear(state_dim, 32),
             nn.ReLU(),
             nn.Linear(32, 64),
             nn.ReLU()
@@ -65,15 +65,14 @@ class QMIX(nn.Module):
         self.initialize_weights()
 
     def forward(self, x, actions, action_values, num_agents=3, target=False):
-        actions = [int(action) for agent, action in actions.items() if 'predator' in agent]
         q_values = []
         for action, values in zip(actions, action_values):
             q = values.max() if target else values[action]
             q_values.append(q)
         
         # node_features = compute_global_relative_features(node_features, num_agents)
-        node_features = self.fcin(node_features)
-        agent_features = node_features[:num_agents]
+        x = self.fcin(x)
+        agent_features = x[:num_agents]
         
         # Stack Q-values
         q_values = torch.stack(q_values).unsqueeze(-1)  # Make sure q_values has a feature dimension

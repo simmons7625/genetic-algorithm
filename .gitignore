@@ -1,2 +1,4 @@
-./__pycache__
-.csv
+*.csv
+*.pth
+# __pycache__ ディレクトリ全体を除外
+__pycache__/
