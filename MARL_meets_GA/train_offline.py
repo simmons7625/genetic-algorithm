@@ -14,7 +14,7 @@ train_config = {
     'save_interval': 10000,
     'update_interval': 10,
     'update_tau': 0.01,
-    'max_cycles': 10,
+    'max_cycles': 1000,
     'gamma': 0.99,
     'mixer_lr': 1e-4,
     'q_lr': 1e-4,

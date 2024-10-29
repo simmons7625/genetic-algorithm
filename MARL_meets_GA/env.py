@@ -4,7 +4,7 @@ import random
 import torch
 
 class CooperativeCollectionEnv:
-    def __init__(self, agents, grid_size=8, num_items=5, num_obstacles=2, reward=10):
+    def __init__(self, agents, grid_size=8, num_items=5, num_obstacles=2, reward=10, move_item=False):
         self.grid_size = grid_size
         self.num_items = num_items
         self.agents = agents
@@ -12,6 +12,7 @@ class CooperativeCollectionEnv:
         self.num_obstacles = num_obstacles  # タプルで直接指定した障害物の座標
         self.cell_size = 40  # 各セルのピクセルサイズ
         self.reward = reward
+        self.move_item = move_item
 
     def reset(self):
         self._set_obstacles()
@@ -39,7 +40,9 @@ class CooperativeCollectionEnv:
 
     def step(self, actions):
         rewards = np.full(len(self.agents), -0.01 * self.reward)
-        
+        # 各itemの移動を実行
+        if self.move_item:
+            self._move_items()
         # 各エージェントの行動（0: 上, 1: 下, 2: 左, 3: 右）を実行
         for i, action in enumerate(actions):
             self.agents[i].move(action, self.obstacles)
@@ -50,7 +53,7 @@ class CooperativeCollectionEnv:
                     rewards[i] = self.reward
                     self.items.remove(item)  # 収集されたアイテムを削除
                     break  # 1回の行動で1つのアイテムしか収集しない
-
+            
         # 全アイテムが収集されるとタスク完了
         if not self.items:
             self.done = True
@@ -92,3 +95,37 @@ class CooperativeCollectionEnv:
 
         # 画面更新
         pygame.display.flip()
+
+    # itemが動的にエージェントから逃げるよう設定
+    def _move_items(self):
+        for item_index, item in enumerate(self.items):
+            # 現在のアイテムの位置
+            item_x, item_y = item
+            
+            # アイテムの移動可能な方向（上、下、左、右、またはその場に留まる）
+            possible_moves = {
+                'up': (item_x, max(0, item_y - 1)),
+                'down': (item_x, min(self.grid_size - 1, item_y + 1)),
+                'left': (max(0, item_x - 1), item_y),
+                'right': (min(self.grid_size - 1, item_x + 1), item_y),
+                'stay': (item_x, item_y)  # 移動しない選択肢
+            }
+
+            # 各移動方向におけるエージェントからの合計距離を計算
+            max_distance = -np.inf
+            best_move = 'stay'
+            for move, (new_x, new_y) in possible_moves.items():
+                # グリッド範囲内であり、障害物がない場合のみ移動を考慮
+                if (new_x, new_y) in self.obstacles or not (0 <= new_x < self.grid_size and 0 <= new_y < self.grid_size):
+                    continue
+
+                # 新しい位置から各エージェントへのマンハッタン距離を計算
+                total_distance = sum(abs(new_x - agent.position[0]) + abs(new_y - agent.position[1]) for agent in self.agents)
+
+                # 最も遠い移動を選択
+                if total_distance > max_distance:
+                    max_distance = total_distance
+                    best_move = move
+
+            # 最適な移動を実行
+            self.items[item_index] = possible_moves[best_move]
