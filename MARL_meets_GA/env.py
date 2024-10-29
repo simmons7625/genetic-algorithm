@@ -4,15 +4,21 @@ import random
 import torch
 
 class CooperativeCollectionEnv:
-    def __init__(self, agents, grid_size=8, num_items=5, num_obstacles=2, reward=10, move_item=False):
+    def __init__(self, agents, grid_size=8, num_items=5, num_obstacles=2, reward=10, move_item=False, seed=None):
         self.grid_size = grid_size
         self.num_items = num_items
         self.agents = agents
         self.items = []
         self.num_obstacles = num_obstacles  # タプルで直接指定した障害物の座標
-        self.cell_size = 40  # 各セルのピクセルサイズ
+        self.cell_size = 60 # 各セルのピクセルサイズ
         self.reward = reward
         self.move_item = move_item
+        self.window_size = self.grid_size * self.cell_size
+        pygame.init()
+        self.screen = pygame.display.set_mode((self.window_size, self.window_size))
+        pygame.display.set_caption("Grid Environment")
+        if seed:
+            random.seed=seed
 
     def reset(self):
         self._set_obstacles()
@@ -21,16 +27,16 @@ class CooperativeCollectionEnv:
         self.items = [self._random_position() for _ in range(self.num_items)]
         self.steps = 0
         self.done = False
-        self.window_size = self.grid_size * self.cell_size
-        pygame.init()
-        self.screen = pygame.display.set_mode((self.window_size, self.window_size))
-        pygame.display.set_caption("Grid Environment")
         return torch.stack([torch.tensor(agent.get_partial_observation(self.items, self.agents, self.obstacles), dtype=torch.float) for agent in self.agents])
 
-
     def _set_obstacles(self):
-        self.obstacles = [(random.randint(0, self.grid_size - 1), random.randint(0, self.grid_size - 1)) for _ in range(self.num_obstacles)]
-    
+        self.obstacles = []
+        while len(self.obstacles) < self.num_obstacles:
+            obstacle = (random.randint(1, self.grid_size - 2), random.randint(1, self.grid_size - 2))
+            # 障害物がエージェントやアイテムの隣接セルを囲まないようにする
+            if obstacle in self.obstacles:
+                continue
+
     def _random_position(self):
         position = [random.randint(0, self.grid_size - 1), random.randint(0, self.grid_size - 1)]
         # 障害物と重複しないように位置を設定
@@ -39,10 +45,7 @@ class CooperativeCollectionEnv:
         return position
 
     def step(self, actions):
-        rewards = np.full(len(self.agents), -0.01 * self.reward)
-        # 各itemの移動を実行
-        if self.move_item:
-            self._move_items()
+        rewards = np.full(len(self.agents), 0)
         # 各エージェントの行動（0: 上, 1: 下, 2: 左, 3: 右）を実行
         for i, action in enumerate(actions):
             self.agents[i].move(action, self.obstacles)
@@ -53,11 +56,15 @@ class CooperativeCollectionEnv:
                     rewards[i] = self.reward
                     self.items.remove(item)  # 収集されたアイテムを削除
                     break  # 1回の行動で1つのアイテムしか収集しない
-            
+         
         # 全アイテムが収集されるとタスク完了
         if not self.items:
             self.done = True
             pygame.quit()
+
+        # 各itemの移動を実行
+        if self.move_item:
+            self._move_items()
 
         self.steps += 1
 
@@ -111,7 +118,7 @@ class CooperativeCollectionEnv:
                 'stay': (item_x, item_y)  # 移動しない選択肢
             }
 
-            # 各移動方向におけるエージェントからの合計距離を計算
+            # 各移動方向における最も近いエージェントからの距離を計算
             max_distance = -np.inf
             best_move = 'stay'
             for move, (new_x, new_y) in possible_moves.items():
@@ -119,12 +126,12 @@ class CooperativeCollectionEnv:
                 if (new_x, new_y) in self.obstacles or not (0 <= new_x < self.grid_size and 0 <= new_y < self.grid_size):
                     continue
 
-                # 新しい位置から各エージェントへのマンハッタン距離を計算
-                total_distance = sum(abs(new_x - agent.position[0]) + abs(new_y - agent.position[1]) for agent in self.agents)
+                # 各エージェントからの距離を計算し、最も近いエージェントとの距離を取得
+                min_distance_to_agent = min(abs(new_x - agent.position[0]) + abs(new_y - agent.position[1]) for agent in self.agents)
 
-                # 最も遠い移動を選択
-                if total_distance > max_distance:
-                    max_distance = total_distance
+                # 最も遠い移動を選択（最も近いエージェントとの距離を最大化）
+                if min_distance_to_agent > max_distance:
+                    max_distance = min_distance_to_agent
                     best_move = move
 
             # 最適な移動を実行

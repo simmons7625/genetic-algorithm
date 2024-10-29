@@ -10,25 +10,26 @@ from ExperienceReplay import ExperienceReplay
 
 # 学習パラメータ
 train_config = {
-    'num_episodes': 1000,
-    'save_interval': 10000,
-    'update_interval': 10,
+    'max_steps': 1010000,
+    'max_cycle':1000,
+    'save_interval': 100000,
+    'update_interval': 1000,
     'update_tau': 0.01,
-    'max_cycles': 1000,
     'gamma': 0.99,
+    'mixer':'AIQatten',
     'mixer_lr': 1e-4,
     'q_lr': 1e-4,
-    'eps_start': 0.2,
-    'eps_end': 0.2,
-    'eps_decay': 1,
+    'eps_start': 1,
+    'eps_end': 0.05,
+    'eps_decay': 200000,
     'vision_range': 1,
-    'grid_size':15, # 10 * 10
-    'num_items': 10,
-    'num_agents':10,
-    'num_obstacles': 50,
+    'grid_size':10, # 10 * 10
+    'num_items': 2,
+    'num_agents':3,
+    'num_obstacles': 10,
     'item_reward': 10,
     'load_model': False,
-    'replay_buffer_capacity': 50000,
+    'replay_buffer_capacity': 100000,
     'exploration_steps': 10000,
     'batch_size': 32
 }
@@ -84,9 +85,8 @@ def _train(train_config, device):
     batch_size = train_config['batch_size']
     num_agents = train_config['num_agents']
     vision_range = train_config['vision_range']
-    
-    mixer = Mixer(device=device, gamma=train_config['gamma'], lr=train_config['mixer_lr'], gru=False)
     agents = [Agent(agent_id=i, grid_size=train_config['grid_size'], vision_range=vision_range, lr=train_config['q_lr'], gamma=train_config['gamma'], device=device) for i in range(num_agents)]
+    mixer = Mixer(device=device, gamma=train_config['gamma'], lr=train_config['mixer_lr'], model=train_config['mixer'], state_dim=agents[0].state_dim)
     if train_config['load_model']:
         model_path = train_config['model_path']
         mixer.load_network(model_path)
@@ -94,61 +94,77 @@ def _train(train_config, device):
             agents[i].load_network(model_path + f'{i}_')
     
     step = 0
-    for ep in tqdm(range(1, train_config['num_episodes'] + 1), desc="Training Episodes"):
-        env = CooperativeCollectionEnv(
-            grid_size=train_config['grid_size'], 
-            agents=agents,
-            num_items=train_config['num_items'],
-            num_obstacles=train_config['num_obstacles']
-        )
-        observations = env.reset()
-        score = 0
-        losses = []
-        
-        for _ in range(train_config['max_cycles']):
-            if step <= train_config['exploration_steps']:
-                eps = train_config['eps_start']
-            else:
-                eps = max(train_config['eps_end'], train_config['eps_start'] * (1 - step / train_config['eps_decay']))
+    with tqdm(total=train_config['max_steps'], desc="Training Steps") as pbar:
+        while step < train_config['max_steps']:
+            env = CooperativeCollectionEnv(
+                grid_size=train_config['grid_size'], 
+                agents=agents,
+                num_items=train_config['num_items'],
+                num_obstacles=train_config['num_obstacles'],
+                reward=train_config['item_reward'],
+                move_item=True
+            )
+            observations = env.reset()
+            score = 0
+            losses = []
             
-            actions = select_actions(agents=agents, obs=observations, eps=eps)
-            env.render()
-            next_observations, rewards, _ = env.step(actions)
-            reward = rewards.sum()  # 報酬を合計
-            
-            replay_buffer.push(observations, actions, reward, next_observations)
-            
-            if step >= train_config['exploration_steps'] and len(replay_buffer.buffer) >= batch_size:
-                obs, act, rwd, next_obs = replay_buffer.sample(batch_size)
-                td_errors = []
-                for i in range(batch_size):
-                    td_error = mixer.compute_td_error(rwd[i], obs[i], next_obs[i], act[i], agents)
-                    td_errors.append(td_error)
-                loss = mixer.train(td_errors, agents)
-                losses.append(loss.detach().item())
+            for cycle in range(train_config['max_cycle']):
+                # エピソード終了判定
+                if step >= train_config['max_steps']:
+                    break
                 
-            score += reward
-            observations = next_observations
-            
-            # パラメータの更新
-            if step % train_config['update_interval'] == 0:
-                mixer.update_target(tau=train_config['update_tau'])
-                for agent in agents:
-                    agent.update_target(tau=train_config['update_tau'])
+                # εの設定
+                if step <= train_config['exploration_steps']:
+                    eps = train_config['eps_start']
+                else:
+                    eps = max(train_config['eps_end'], train_config['eps_start'] * (1 - step / train_config['eps_decay']))
+                    env.render()
+                actions = select_actions(agents=agents, obs=observations, eps=eps)
+                next_observations, rewards, _ = env.step(actions)
+                if rewards.sum() > 0:
+                    reward = rewards.sum()  # 報酬を合計
+                else:
+                    reward = -0.1 * train_config['item_reward']
+                
+                replay_buffer.push(observations, actions, reward, next_observations)
+                
+                # 経験リプレイと訓練
+                if step >= train_config['exploration_steps'] and len(replay_buffer.buffer) >= batch_size:
+                    obs, act, rwd, next_obs = replay_buffer.sample(batch_size)
+                    td_errors = []
+                    for i in range(batch_size):
+                        td_error = mixer.compute_td_error(rwd[i], obs[i], next_obs[i], act[i], agents)
+                        td_errors.append(td_error)
+                    loss = mixer.train(td_errors, agents)
+                    losses.append(loss.detach().item())
+                    
+                score += reward
+                observations = next_observations
+                
+                # パラメータの更新
+                if step % train_config['update_interval'] == 0:
+                    mixer.update_target(tau=train_config['update_tau'])
+                    for agent in agents:
+                        agent.update_target(tau=train_config['update_tau'])
 
-            # モデルの保存
-            if step % save_interval == 0:
-                save_model(mixer, agents, result_dir, step)
+                # モデルの保存
+                if step % save_interval == 0:
+                    save_model(mixer, agents, result_dir, step)
+                
+                log_results(step_log_path, ['reward', 'loss'], [reward, losses[-1] if losses else 'nan'])
+                
+                step += 1
+                pbar.update(1)  # プログレスバーの更新
+                
+                if env.done:
+                    break
             
-            log_results(step_log_path, ['reward', 'loss'], [reward, losses[-1] if losses else 'nan'])
+            # エピソード毎のログ
+            log_results(ep_log_path, ['reward', 'loss'], [score, sum(losses) / len(losses) if losses else 'nan'])
+            print(f"Step {step} - Score: {score}, Loss: {sum(losses) / len(losses) if losses else 'nan'}")
             
-            step += 1 
-            
-            if env.done:
+            if step >= train_config['max_steps']:
                 break
-            
-        log_results(ep_log_path, ['reward', 'loss'], [score, sum(losses) / len(losses) if losses else 'nan'])
-        print(f"Episode {ep} - Score: {score}, Loss: {sum(losses) / len(losses) if losses else 'nan'}")
-        
+
 if __name__ == "__main__":
     train()

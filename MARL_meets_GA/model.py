@@ -12,7 +12,7 @@ class DQN(nn.Module):
     """
     Deep Q-Network (DQN) with Graph Attention Network (GAT) layers and GRU integration.
     """
-    def __init__(self, state_dim=26, out_dim=4):
+    def __init__(self, state_dim=26, out_dim=5):
         super(DQN, self).__init__()        
         self.fcin = nn.Sequential(
             nn.Linear(state_dim, 32),

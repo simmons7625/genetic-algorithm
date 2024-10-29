@@ -6,16 +6,17 @@ from model import *
 import random
 
 class Agent: 
-    def __init__(self, agent_id, grid_size, vision_range=1, lr=1e-3, gamma=0.99, device='cpu', ):
-        self.model = DQN().to(device) 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
-        self.target_model = copy.deepcopy(self.model)
+    def __init__(self, agent_id, grid_size, vision_range=1, lr=1e-3, gamma=0.99, device='cpu'):
         self.gamma = gamma
         self.device = device
         self.agent_id = agent_id
         self.position = [0, 0]
         self.grid_size = grid_size
         self.vision_range = vision_range
+        self.state_dim=((2*self.vision_range+1)**2-1)*3+2
+        self.model = DQN(state_dim=self.state_dim).to(device)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
+        self.target_model = copy.deepcopy(self.model)
 
     def reset_position(self):
         self.position = [random.randint(0, self.grid_size - 1), random.randint(0, self.grid_size - 1)]
@@ -84,7 +85,7 @@ class Agent:
     
     def action(self, observations, eps, id):
         if random.random() < eps:
-                action = random.randint(0, 3)
+                action = random.randint(0, 4)
         else:
             action_values = self.model(observations, id)
             action = action_values.argmax().item()
@@ -102,17 +103,16 @@ class Agent:
         self.model.load_state_dict(torch.load(path + 'learner.pth'))
     
 class Mixer:
-    def __init__(self, device='cpu', model='AIQatten', gamma=0.99, lr=1e-3, gru=False):
+    def __init__(self, device='cpu', model='AIQatten', gamma=0.99, lr=1e-3, state_dim=26):
         if model == 'AIQatten':
-            self.mixer = AIQatten().to(device)
+            self.mixer = AIQatten(state_dim=state_dim).to(device)
         if model == 'Qatten':
-            self.mixer = Qatten().to(device)
+            self.mixer = Qatten(state_dim=state_dim).to(device)
         if model == 'QMIX':
-            self.mixer = QMIX().to(device)
+            self.mixer = QMIX(state_dim=state_dim).to(device)
         self.target_mixer = copy.deepcopy(self.mixer)
         self.optimizer = optim.Adam(self.mixer.parameters(), lr=lr)
         self.gamma = gamma  # 割引率 
-        self.gru = gru
     
     def compute_td_error(
         self, reward, features, next_features, actions, learners):
