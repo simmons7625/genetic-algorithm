@@ -102,8 +102,13 @@ class Agent:
         self.model.load_state_dict(torch.load(path + 'learner.pth'))
     
 class Mixer:
-    def __init__(self, device='cpu', gamma=0.99, lr=1e-3, gru=False):
-        self.mixer = QMIX().to(device)
+    def __init__(self, device='cpu', model='AIQatten', gamma=0.99, lr=1e-3, gru=False):
+        if model == 'AIQatten':
+            self.mixer = AIQatten().to(device)
+        if model == 'Qatten':
+            self.mixer = Qatten().to(device)
+        if model == 'QMIX':
+            self.mixer = QMIX().to(device)
         self.target_mixer = copy.deepcopy(self.mixer)
         self.optimizer = optim.Adam(self.mixer.parameters(), lr=lr)
         self.gamma = gamma  # 割引率 
