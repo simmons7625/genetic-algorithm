@@ -10,10 +10,10 @@ from ExperienceReplay import ExperienceReplay
 
 # 学習パラメータ
 train_config = {
-    'max_steps': 1010000,
+    'max_steps': 1100000,
     'max_cycle':1000,
     'save_interval': 100000,
-    'update_interval': 1000,
+    'update_interval': 10,
     'update_tau': 0.01,
     'gamma': 0.99,
     'mixer':'AIQatten',
@@ -30,7 +30,7 @@ train_config = {
     'item_reward': 10,
     'load_model': False,
     'replay_buffer_capacity': 100000,
-    'exploration_steps': 10000,
+    'exploration_steps': 100000,
     'batch_size': 32
 }
 

@@ -36,6 +36,7 @@ class CooperativeCollectionEnv:
             # 障害物がエージェントやアイテムの隣接セルを囲まないようにする
             if obstacle in self.obstacles:
                 continue
+            self.obstacles.append(obstacle)
 
     def _random_position(self):
         position = [random.randint(0, self.grid_size - 1), random.randint(0, self.grid_size - 1)]
